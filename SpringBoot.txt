@@ -1,0 +1,414 @@
+===>
+Spring boot starter pom resolves conflicts of different artifacts(& their version). Otherwise we might need to pull different artifacts and resolve the dependencies at our own.
+
+===>
+Spring config server
+
+Create new spring starter project with config server dependency
+
+Put @EnableConfigServer on main classs with @SpringBootApplication
+
+In properties file
+	spring.cloud.config.server.git.uri=C:/Sumit/Development/Workspaces/STS/2018/Jan/configuration
+	server.port=8888
+
+Also make sure to commit a file as configuration-client-development.properties under specified location spring.cloud.config.server.git.uri with property/key.
+You can test config server by hitting url in browser as http://localhost:8888/configuration-client-development.properties
+
+===>
+Spring config client
+
+1. Create new spring starter project with config client, web, and actuator dependency
+2. Create bootstrap.properties file with following properties
+	spring.profiles.active=development
+	spring.application.name=configuration-client
+	spring.cloud.config.uri=http://localhost:8888
+3. Expose main application class as rest controller by performing following changed
+	Put @RestController above the declaration of class
+	Define a property(as public String message) in class and annotate with @Value
+	Define a method(as getMesssage) & annotate it with @RequestMapping("/message") in class
+	
+	
+Actuator is used to monitor application 
+Basically used to refresh properties used by application.
+
+To do so:
+	1. Add @RefreshScope in main SpringBootApplication class of config client project..
+	2. Put management.security.enabled=false in application.properties of config client project.
+	2. Change property value in property file(configuration-client-development.properties) referenced in config server and eventually by config client.
+	2. Hit curl --data '' http:localhost:8080/refresh from git bash
+
+
+===>
+Spring configuration encryption
+
+	# Download JCE(Java Cryptography extension) unlimited strength Jurisdiction policy jar.
+	# Copy jars(local_policy and US-export_policy) in JRE library(C:\Program Files (x86)\Java\jdk1.8.0_161\jre\lib\security\policy)
+	# Add new property(encrypt.key) with value(as secret or anything else) in application.properties file of config server.
+	
+	
+===>
+Netflix cloud platform
+Part of Netflix Open Source Software(OSS)
+Platform components
+	Eurkea: Service Registry and discovery or you can think it as DNS.
+	Hystrix: Latency and Fault tolerance. Also provide circuit breaking. Also provide dashboard for monitoring.
+	Ribbon: Load Balancing
+	Zuul: Edge service and routing. Provide a single interface for which all client can interface with service. Think of this as API gateway.
+	
+==>
+Eureka Generic
+
+	Server (Eureka Server)
+	Client (Eureka client as a service registering with eureka server)
+	Service (Microservice registered with Eureka server as eureka client)
+	Instance (Instance of eureka Service to )
+	
+
+===>
+Eureka Server
+	Create new spring starter project
+	1. Annotate main spring boot class with @EnableEurekaServer
+	2. Add following properties to application.properties
+		server.port=8761
+		eureka.client.register-with-eureka=false
+		eureka.client.fetch-registry=false
+		
+Eureka Server with multiple instance to avoid single point of failure
+
+	# Create a backup of hosts file located @ C:\Windows\System32\drivers\etc
+	# Modify existing hosts file located @ C:\Windows\System32\drivers\etc with entries of 127.0.0.1 pointing to peer1 and 127.0.0.1 pointing to peer2
+	# Rename application.properties to application-peer1.properties with properties as
+		server.port=8761
+		eureka.client.register-with-eureka=false
+		eureka.client.fetch-registry=false
+		eureka.instance.hostname=peer1
+		eureka.client.serviceUrl.defaultZone=http://peer2:8762/eureka    //This property is used to specify the eureka server url to perform service discovery
+	# Create application-peer2.properties file with following properties as
+		server.port=8762
+		eureka.client.register-with-eureka=false
+		eureka.client.fetch-registry=false
+		eureka.instance.hostname=peer1
+		eureka.client.serviceUrl.defaultZone=http://peer1:8761/eureka
+		
+	# Create two spring boot run configuration(from STS) of Spring boot application by specifying VM argument as -Dspring.profiles.active=peer1 for one configuration 
+		and -Dspring.profiles.active=peer2 for another configuration.
+	# Run both configuration
+		
+	
+Eureka Client:
+		# Create a new spring starter project with dependency of Eureka Discovery
+		# Add annotation @EnableEurekaClient on main SpringBootApplication class.
+		# Add property/value as spring.application.name=eureka-client in application.properties file.
+	
+
+Eureka Client Rest:
+		# Create a new spring starter project with dependency of Eureka Discovery
+		# Add annotation @EnableEurekaClient on main SpringBootApplication class.
+		# Add annotation @RestController on main SpringBootApplication class.
+		# Autowired EurakaClient class object in main SpringBootApplication class.
+		# Define a new method with RequestMapping annotation and parameter as "/serviceinfo". This method should have details.
+			InstanceInfo instance = client.getNextServerFromEureka("eureka-client", false); //eureka-client should be the application name of above eureka client(not rest)
+			return instance.getHomePageUrl();
+		# Add property/value as spring.application.name=eureka-client-rest in application.properties file.
+
+	
+Eureka Client with RestTemplate
+
+	# Define a bean with @Autowired method to return new RestTemplate from main spring boot class of eureka client project.
+	# Define property as eureka.client.serviceUrl.defaultZone=http://localhost:8761/eureka
+		This property would make sure we can perform service discovery through eureka server.
+		Similar property needs to be defined in eureka rest project so rest template can talk to eureka server.
+	# Create a new RestController within same package as Spring boot main class with autowiring of restTemplate(actually this is getting wired from spring main class	
+		where we have defined a bean with RestTemplate type.)
+	# Define a method within rest controller with requestmapping as "/execute" with following implementation
+		return restTemplate.getForObject("http://EUREKA-CLIENT-REST/serviceinfo", String.class);
+	# Now validate the same by invoking url with http://localhost:8080/execute
+	
+
+===>
+Eureka Hystrix	
+
+	Create two projects:
+	# 1st one as spring-microservices-simple-service
+		Here within main SpringBoot class expose it as RestController and expose a requestmapping(/service) returning List of String objects. 
+	# 2nd one as spring-microservices-hystrix
+		Here within main SprinBoot autowire a rest Template(defined in another configuration class as bean)
+		Through rest template invoke a service defined in spring-microservices-simple-service.
+		@RequestMapping("/startClient")
+		public List<String> startClient() {
+			return this.restTemplate.getForObject("http://localhost:8888/service", List.class);	
+		}
+		
+		Stopping service on http://localhost:8888/service would result in 500 error. So, here we need to enable hystrix(by applying annotation @EnableCircuitBreaker)
+		
+		Now annotate method(startClient()) with @HystrixCommand(fallbackMethod="failover") & create a method failover to return list of String objects.
+		
+		
+	# Hystrix command with commandProperties
+		Within @HystrixCommand now specify another parameter as 
+		commandProperties { @HystrixProperty(name="execution.isolation.thread.timeoutInMilliseconds", value="500") }
+		
+		Modify startClient() method signature with parameter @RequestParam long time.
+		Also Add Thread.sleep(time) at first line within method implementation of startClient
+		
+		So, with modification we are instructing hystrix to wait for 500 milliseconds before invoking fallback method.
+		
+		Also modify failover method signature with parameter with long time.
+		
+		
+	#Hystrix Dashboard
+		1. Include spring-cloud-starter-hystrix-dashboard dependency in pom.xml
+		2. Replace annotation @EnableCircuitBreaker with @EnableHystrix. Please note EnableHystrix is more generic as compared to @EnableCircuitBreaker.
+		3. Also place @EnableHystrixDashboard on SpringBoot main class.
+		
+		Now hit http://localhost:8080/hystrix to view the dashboard
+		Also to see the generated traffic view keep on trying hitting service url(http://localhost:8080/startClient?time=100) through browser.
+		
+		
+
+		
+===>
+Ribbon loadbalancing
+
+	Setup Overview:
+		Setup several microservices instances
+		Establish a Ribbon client
+		Configure a Ribbon client
+		
+	
+	# Create a spring starter project with name spring-microservices-simple-service-2 (with only web dependency)
+		1. Here configure spring boot application class as RestController
+		2. Autowired property with @Value("${server.port}") for class attribute port.
+		3. Expose RestEndpoint(@RequestMapping("/execute") with a method execute of return type string. This method returns port of this class object attribute added to string message.
+		4. Expose RestEndpoint(@RequestMapping("/") with a method service() of return type string. This method is manadatory so ribbon client can invoke to check health status.
+		5. Now Create three run launch configuration from STS. Specify VM argument as -Dserver.port as 7777 for first run configuration, 8888 for second, 999 for third
+		6. Validate the same by hitting url from browser.
+	
+	# Create a spring starter project with name spring-microservices-ribbon (with only web and ribbon dependency)
+		1. Here configure spring boot application class as RestController
+		2. Create a Bean with @Bean annotation to return a new RestTemplate.
+		3. @Autowired restTemplate
+		4. Expose RestEndpoint(@RequestMapping("/startClient") with a method execute of return type string. 
+			This method returns invoked method of restTemplate.getForObject("http://localhost:7777/execute", String.class) .
+			
+	# Creating load balanced bean through ribbon project
+		1. Create a Configuration class as SimpleServiceConfiguration. Here we autowire IClientConfig, define bean for Ping, and define bean for rule.
+		2. Modify application.properties file to define service instance specific properties
+		3. Modify spring boot application main class. Annotate class with @RibbonClient
+	
+	
+===>
+Zuul(a.k.a Edge service, Gatekeeper, API Gateway)	
+	Setup Zuul project
+	Proxy request to Zuul
+	Adjust routing configuration
+	Establish custom filter for fine grained controller
+	
+	
+	
+	# Zuul project setup
+		Create two projects	
+			1)simple-microservices-simple-service3(with web dependency). Create a RestController on spring boot main class. Define request mapping("/execute") for execute path 
+				with method execute returning a simple string.
+				Modify application.properties with server.port=7777, spring.application.name=simple-service-3
+			2)simple-microservices-zuul(with web, zuul dependency)
+			
+	# Zuul proxying
+		1) Modify simple-microservices-zuul main spring boot class by specifying annotation as @EnableZuulProxy
+		2) Modify application.properties as
+			ribbon.eureka.enabled=false
+			server.port=8080
+
+			zuul.routes.somePath.url=http://localhost:7777
+			
+			Now start the Zuul proxy boot application & hit the url with http://localhost:8080/somepath/execute
+			
+	# Routing Configuration
+		Add following properties in application.properties file to provide routing configuration
+			zuul.routes.somePath.path=/services/**
+			zuul.prefix=/apiV1
+			
+	# Zuul filters
+		Create a custom filter as CustomZuulFilter which extends ZuulFilter
+		Define @Bean in spring boot main class
+		
+		public CustomZuulFilter filter(){
+			return new CustomZuulFilter();
+		}
+		
+		Now start zuul boot project.
+
+				
+	
+===>
+Spring Cloud Security
+
+		Overview:
+		Basic OAuth concepts
+		Establish simple oAuth scheme
+		Build a JDBC repository for oAuth support
+		Create an oAuth security model using separate infrastructure
+		Install tools for oAuth testing and support
+		
+		Create a consolidated authorization server, resource server. These servers use in-memory management of tokens.
+		We will using spring support token management via JDBC. For demonstration we would HSQL to store oauth tokens.
+		
+		There are four main actors in OAuth flow:
+			1. Resource owner : This is the owner of the data against which we are trying to access to.
+			2. Resource server:  Normally this is rest API which house the resource owner data & fine grained access to that data.
+			3. Client application: Third party which is trying to access resource owner data
+			4. Authorization server: Serve as a conductor to orchestration of tokens and credentials exchanged between different actors.
+			
+		OAuth Grant types:
+			1. Authorization code:
+			2. Implicit grant:
+			3. Resource owner credentials grant(password):
+			4. Client crendetials grant:
+			
+			
+			
+		Password Grant:
+																				Owner + Client Credentials
+															|				|----------------------->	|						|
+															|				|							|						|
+			|					|							|				|							| Resource Authorizer	|
+			| 					|	Owner Credentials		|				|<-----------------------	|						|
+			|					|							|				|	Access Token			|						|
+			| Resource Owner 	|	------------------>		|	Client APP	|
+			|	(User)			|							| (Mobile app)	|										
+			|					|							|				|----------------------->	|						|
+			|					|							|				|	Access Token			|	Resource Server		|
+															|				|<-----------------------	|						|
+															|				|	Owner Data			
+	
+			
+	
+		
+		# Authorization server setup
+			1. Create a new project spring-microservices-oauth-server(with dependency of oauth, jdbc, spring security, hsql)
+			2. Modify main spring boot application class by specifying annotation @EnableAuthorizationServer. This annotation expose few default which we can use to 
+				generate, refresh, and validate the oAuth tokens.
+			3. Create a new class AuthorizationServerConfig which extends AuthorizationServerConfigurationAdapter. This adapter facilitate configuration of our project.
+				Annotate this class with @Configuration
+				
+				Within our project we are going to enable password grant. This is not enabled by default within spring cloud support for OAuth.
+				So, we need to override to do following changes
+					@Autowired
+					private AuthenticationManager authManager;
+
+					@Override
+					public void configure(AuthorizationServerEndpointsConfigurer endpoints) throws Exception {
+						endpoints.authenticationManager(authManager);
+					}
+					
+				Another change we need to do is to configure clients which would be authorized through authorization server. So, we need to do following changes
+					
+					@Override
+					public void configure(ClientDetailsServiceConfigurer clients) throws Exception {
+						clients.inMemory().withClient("webapp").secret("websecret").authorizedGrantTypes("password")
+								.scopes("read,write,trust");
+					}
+		
+		
+			4. We need to configure security of the authorization server. To do the same we need to create class as WebSecurityConfig extends WebSecurityConfigurerAdapter. 
+				This adapter would allows us to configure security of our web application. Annotate this class with @Configuration
+				We need to do following changes in class
+					@Bean
+					public AuthenticationManager authenticationManagerBean() throws Exception{
+						return super.authenticationManagerBean();
+					}
+
+					@Override
+					protected void configure(AuthenticationManagerBuilder authbuilder) throws Exception {
+						authbuilder.inMemoryAuthentication().withUser("user1").password("password1").roles("USER");
+					}
+			
+			5. Now we need to modify the application.properties of our project with following properties
+				server.port=9090
+				
+			6. Now start the application as spring boot application and then use postman to post a request with http://localhost:9090/oauth/token
+				Within authentication tab of postman use basic authentication.
+				Provide client credentials(webapp/websecret). Update the header.
+				Now add param to our request.
+					a) Specify name/value as grant_type/password
+					b) Specify name/value as username/user1
+					b) Specify name/value as password/password1
+			7) Now hit the URL and then we would get our access token.
+			
+			Now this token can be used to access the resource(from resource server) which are protected by oAuth architecture.
+			
+		# Oauth resource server setup
+			Here note both resource server as well as authorization server are same application. This is very trivial setup.
+			
+			Modify main spring boot class with annotation @EnableResourceServer & @RestController of project spring-microservices-oauth-server.
+			Also define a method(endpoint()) which return a sampel string message) with request mapping @RequestMapping("/resource/endpoint")
+			
+			Now run spring-microservices-oauth-server application & get the access token.
+			Once you have access token then you can access the rest point as http://localhost:9090/resource/endpoint?access_token=<token>
+			
+			Now protect the rest endpoint with specific role by applying following changes.
+			Annotate class with @EnableGlobalMethodSecurity(prePostEnabled=true)
+			Annotate method(endpoint()) with @PreAuthorize("hasRole('ADMIN')")
+			
+			Also modify WebSecurityConfig class with following change(adding admin user with admin role)	
+				auth.inMemoryAuthentication().withUser("user1").password("password1").roles("USER").and().withUser("admin")
+				.password("password2").roles("ADMIN");
+
+			
+		
+			Now relaunch the application.
+			First get the token for user1 & then try to access the resource. Here you will get access denied error.
+			Now you generate token with admin user & then use that token to access the resource.
+		
+		
+		# Oauth resource client setup
+			1. Create a new project spring-microservices-oauth-client(with dependency of oauth, web, spring security)
+			2. Take WebSecurityConfig class from server project & copy in client project.
+				Remove below method
+				@Bean
+				public AuthenticationManager authenticationManagerBean() throws Exception{
+					return super.authenticationManagerBean();
+				}
+				Add following method
+				@Override
+				protected void configure(HttpSecurity http) throws Exception {
+					http.authorizeRequests().anyRequest().authenticated().and().formLogin().and().httpBasic();
+				}
+		
+			3. Next we need to change the main spring boot class SpringMicroservicesOauthClientApplication.
+			
+			Now start server and client. Hit the URL http://localhost:8080/execute
+		
+		
+		# Oauth token management via hsqldb
+		
+			1.Download hsqldb from site. Extract the zip and add server.properties at root folder of extracted zip.
+			2. Specify the content of server.properties as	
+				server.database.0=file:hsqldb/oreilly
+				server.dbname.0=testdb
+				
+			3. Now open the command prompt and execute the following command(from the root of unzipped hsqldb) to setup the hsqldb
+				java -classpath lib/hsqldb.jar org.hsqldb.server.Server
+			4. Execute another command to run hsqldb
+				java -classpath lib/hsqldb.jar org.hsqldb.server.Server --database.0 file:hsqldb/oreilly --dbname.0 testdb
+			5. Now go to C:\Sumit\Development\databases\hsqldb-2.4.0\hsqldb\bin and launch runManagerSwing.bat
+				Once GUI is opened choose type as HSQL DB Engine Server
+				and specify url as jdbc:hsqldb:hsql://localhost/testdb and connect to DB
+			6. Create schema.sql in resources folder of spring-microservices-oauth-server project. Create two clients
+		
+			7. Convert oauth authorization server to use jdbc as token store. 	
+			
+		# Oauth standalone resource server
+		
+		1. Modify the WebSecurityConfig class.
+		
+		
+		
+		
+		
+	
+		
+	
+	
+	
